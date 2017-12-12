@@ -4,7 +4,7 @@ The project description
 
 ## Roadmap
 
-View the project roadmap [here](LINK_TO_DOC)
+View the project roadmap [here](https://docs.google.com/document/d/1a9sg6WVN6nrXHgrxCmRf5vKxvQK0NZCquNSUx9cuYVs/)
 
 ## Contributing
 
