@@ -1,0 +1,19 @@
+{
+  "name": "clientappserver",
+  "version": "1.0.0",
+  "description": "The project description",
+  "main": "index.js",
+  "dependencies": {
+    "body-parser": "^1.18.2",
+    "cassandra-driver": "^3.3.0",
+    "express": "^4.16.2",
+    "moment": "^2.20.1",
+    "nodemon": "^1.13.3"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Mike Hernandez",
+  "license": "ISC"
+}
