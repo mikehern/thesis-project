@@ -5,8 +5,7 @@ const port = 1337;
 const bodyParser = require('body-parser');
 
 const cassandra = require('cassandra-driver');
-//TODO: use proper keyspace
-const client = new cassandra.Client({ contactPoints: ['127.0.0.1'], keyspace: '' });
+const client = new cassandra.Client({ contactPoints: ['127.0.0.1'], keyspace: 'events' });
 
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
@@ -24,10 +23,14 @@ app.post('/', (req, res) => {
 });
 
 app.post('/events', (req, res) => {
-  const { event_type: e_type, experience_id: x_id, experiment_type: ab_type, user_id: u_id } = req.body;
+  const {
+    event_type: e_type,
+    experience_id: x_id,
+    experiment_type: ab_type,
+    user_id: u_id 
+  } = req.body;
   
-  //TODO: use proper keyspace
-  const query = `insert into events2.events(event_timestamp, event_type, experience_id, experiment_type, user_id) values(${Date.now()}, '${e_type}', ${x_id}, '${ab_type}', ${u_id});`;
+  const query = `INSERT into events.user_events(event_timestamp, event_type, experience_id, experiment_type, user_id) values(${Date.now()}, '${e_type}', ${x_id}, '${ab_type}', ${u_id});`;
 
   client.execute(query)
     .then(result => console.log('DB was hit with: ', result))
