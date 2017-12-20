@@ -42,6 +42,8 @@ app.post('/events', (req, res) => {
     .catch(reason => console.error(reason));
 });
 
+app.get('/experiences', (req, res) => {
 
+});
 
 app.listen(port, () => console.log(`Listening on port ${port}`));
