@@ -3,9 +3,16 @@ const app = express();
 const moment = require('moment');
 const port = 1337;
 const bodyParser = require('body-parser');
+const redis = require('redis');
 
 const cassandra = require('cassandra-driver');
 const client = new cassandra.Client({ contactPoints: ['127.0.0.1'], keyspace: 'events' });
+
+const cache = redis.createClient();
+
+cache.on('connect', () => {
+  console.log('Connected to Redis server.');
+});
 
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
@@ -45,5 +52,7 @@ app.post('/events', (req, res) => {
 app.get('/experiences', (req, res) => {
 
 });
+
+
 
 app.listen(port, () => console.log(`Listening on port ${port}`));
