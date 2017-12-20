@@ -15,7 +15,7 @@ const TSNow = moment(Date.now()).format('llll');
 
 
 app.get('/', (req, res) => {
-  res.send(`User landed on homepage via root route at ${TSNow}`);
+  res.status(200).send(`User landed on homepage via root route at ${TSNow}`);
   console.log(`Client GET at '/' ${TSNow}`);
 });
 
