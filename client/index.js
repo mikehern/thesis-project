@@ -5,6 +5,14 @@ const port = 1337;
 const bodyParser = require('body-parser');
 const redis = require('redis');
 
+const Promise = require('bluebird');
+
+const redis = require('redis');
+const cache = redis.createClient();
+Promise.promisifyAll(redis.RedisClient.prototype);
+Promise.promisifyAll(redis.Multi.prototype);
+cache.on('connect', () => console.log('Connected to Redis!'));
+
 const cassandra = require('cassandra-driver');
 const client = new cassandra.Client({ contactPoints: ['127.0.0.1'], keyspace: 'events' });
 
@@ -39,6 +47,8 @@ app.post('/events', (req, res) => {
     user_id: u_id 
   } = req.body;
   
+
+  //TODO Change db int to largeint
   const query = `INSERT into events.user_events(event_timestamp, event_type, experience_id, experiment_type, user_id) values(${Date.now()}, '${e_type}', ${x_id}, '${ab_type}', ${u_id});`;
 
   //TODO: after writing to db, chain a promise to add to Aggregators queue
@@ -50,9 +60,36 @@ app.post('/events', (req, res) => {
 });
 
 app.get('/experiences', (req, res) => {
-
+  //No location specified
+    //Look up the user:results LIST
+      //If it exists
+        //LPOP 12 results
+        //Send response to client with these 12
+        //Async write a VIEWED event to db
+      //If not
+        //Flip a coin
+        //LRANGE 12 from popularityReview or popularityRating LISTS
+        //Send response to client with these 12
+        //Async write a VIEWED event to db, along with experiment type
+  
+  //Location specified
+    //Look up the location:results LIST
+    //If it exists
+      //LRANGE 12 results
+      //Flip a coin, and sort by review or rating
+      //Decorate each obj with the experiment type
+      //Send response to client with these 12
+      //Async send the user_id/location pair to the user_searches queue
+    //If not
+      //Flip a coin
+      //Make a GET to experiences: sortBy, location, batch number
+      //Use results to populate cache
+      //LRANGE 12 from this cache
+      //Decorate each obj with the experiment type
+      //Send response to client with first 12
+      //Async send the user_id/location pair to the user_searches queue
 });
 
-
-
-app.listen(port, () => console.log(`Listening on port ${port}`));
+if (!module.parent) {
+  app.listen(port, () => console.log(`Listening on port ${port}`));
+}
