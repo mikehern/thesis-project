@@ -3,7 +3,6 @@ const app = express();
 const moment = require('moment');
 const port = 1337;
 const bodyParser = require('body-parser');
-const redis = require('redis');
 
 const Promise = require('bluebird');
 
@@ -14,19 +13,18 @@ Promise.promisifyAll(redis.Multi.prototype);
 cache.on('connect', () => console.log('Connected to Redis!'));
 
 const cassandra = require('cassandra-driver');
-const client = new cassandra.Client({ contactPoints: ['127.0.0.1'], keyspace: 'events' });
-
-const cache = redis.createClient();
-
-cache.on('connect', () => {
-  console.log('Connected to Redis server.');
+const client = new cassandra.Client({
+  contactPoints: ['127.0.0.1'],
+  keyspace: 'events' 
 });
 
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
 const TSNow = moment(Date.now()).format('llll');
-
+const coinFlip = () => {
+  return (Math.floor(Math.random() * 2) == 0) ?'range': 'rating';
+};
 
 
 app.get('/', (req, res) => {
@@ -60,18 +58,39 @@ app.post('/events', (req, res) => {
 });
 
 app.get('/experiences', (req, res) => {
-  //No location specified
-    //Look up the user:results LIST
-      //If it exists
-        //LPOP 12 results
-        //Send response to client with these 12
-        //Async write a VIEWED event to db
-      //If not
-        //Flip a coin
-        //LRANGE 12 from popularityReview or popularityRating LISTS
-        //Send response to client with these 12
-        //Async write a VIEWED event to db, along with experiment type
-  
+  const cacheKey = `${req.query.user}:results`;
+  let clientPayload;
+  let dbPayload;
+
+  cache.lpopAsync(cacheKey, 0, 11)
+    //TODO: build helpers for the repetitive code below
+
+    .then(reply => {
+      if (reply.length > 0) {
+        clientPayload = reply.map(el => el.experiment_type = coinFlip());
+        res.status(200).send(clientPayload)
+        .then(dbPayload = clientPayload.map(el => el.event_type = 'VIEWED'))
+        .then('TODO: CALL CASSANDRA QUERY HERE');
+      } else {
+        if (coinFlip() === 'ratings') {
+          cache.lrangeAsync(popularRatings, 0, 11)
+            .then(reply => clientPayload = reply.map(el => el.experiment_type = coinFlip()))
+            .then(res.status(200).send(clientPayload))
+            .then(dbPayload = clientPayload.map(el => el.event_type = 'VIEWED'))
+          .then('TODO: CALL CASSANDRA QUERY HERE');
+        } else {
+          cache.lrangeAsync(popularReviews, 0, 11)
+            .then(reply => clientPayload = reply.map(el => el.experiment_type = coinFlip()))
+            .then(res.status(200).send(clientPayload))
+            .then(dbPayload = clientPayload.map(el => el.event_type = 'VIEWED'))
+            .then('TODO: CALL CASSANDRA QUERY HERE');
+        }
+      }
+    })
+    .catch(err => console.error(err));
+});
+      
+app.get('/experiences/:location', (req, res) => {
   //Location specified
     //Look up the location:results LIST
     //If it exists
@@ -88,6 +107,7 @@ app.get('/experiences', (req, res) => {
       //Decorate each obj with the experiment type
       //Send response to client with first 12
       //Async send the user_id/location pair to the user_searches queue
+
 });
 
 if (!module.parent) {
