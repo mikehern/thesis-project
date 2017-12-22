@@ -37,7 +37,7 @@ const TSNow = moment(Date.now()).format('llll');
 const coinFlip = () => {
   return (Math.floor(Math.random() * 2) == 0) ? 'reviews' : 'ratings';
 };
-const dbWrite = (experience) => {
+const dbWrite = (experience, res) => {
   const {
     event_type: e_type,
     experience_id: x_id,
@@ -62,16 +62,16 @@ const sendABPayload = (cacheReply, ABResult) => {
       clientPayload = cacheReply.map(el => el.experiment_type = ABResult);
       return clientPayload;
     })
-    .then(clientPayload => res.status(200).send(clientPayload))
-    .then(() => {
-      dbPayload = clientPayload.map(el => el.event_type = 'VIEWED');
-      return dbPayload;
-    })
-    .then(dbPayload => {
-      Promise.map(dbPayload, (experience) => {
-        return dbWrite(experience);
+      .then(clientPayload => res.status(200).send(clientPayload))
+      .then(() => {
+        dbPayload = clientPayload.map(el => el.event_type = 'VIEWED');
+        return dbPayload;
       })
-    });
+      .then(dbPayload => {
+        Promise.map(dbPayload, (experience) => {
+          return dbWrite(experience);
+        })
+      });
   });
 };
 
@@ -87,11 +87,8 @@ app.post('/', (req, res) => {
 });
 
 app.post('/events', (req, res) => {
-  return new Promise((resolve, reject) => {
-    resolve(dbWrite(req.body));
-  })
-  .then(() => sqs.sendMessage(AG_Q_CLICKEVENTS, req.body))
-  .catch(err => console.error(err));
+  let body = req.body;
+  dbWrite(body, res);
 });
 
 app.get('/experiences', (req, res) => {
@@ -138,13 +135,13 @@ app.get('/experiences/:location', (req, res) => {
           }
         })
         //Starting serially... want to test promise.all concurrency later
-        .then(res => {
-          Promise.map(res.data, (experience) => {
-            return cache.lpushAsync(cacheKey, experience);
+          .then(res => {
+            Promise.map(res.data, (experience) => {
+              return cache.lpushAsync(cacheKey, experience);
+            })
+              .then(() => cache.lrangeAsync(cacheKey, 0, 11))
+              .then(reply => sendABPayload(reply, ABResult))
           })
-          .then(() => cache.lrangeAsync(cacheKey, 0, 11))
-          .then(reply => sendABPayload(reply, ABResult))
-        })
       }
     })
     .then(() => {
