@@ -4,6 +4,7 @@ const moment = require('moment');
 const port = 1337;
 const bodyParser = require('body-parser');
 const axios = require('axios');
+const sqs = require('./sqs-helpers');
 
 const Promise = require('bluebird');
 
@@ -23,8 +24,12 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
 const USER_SERVICE = `javi's ip/route`;
+const USER_Q_SEARCHEDLOCATION = `javi's inbound queue`;
+const USER_Q_SEARCHRESULTS = `javi's outbound queue`;
 const AG_SERVICE = `vinoj's ip/route`;
+const AG_Q_CLICKEVENTS = `vinoj's inbound queue`;
 const EXPERIENCES_SERVICE = `aric's ip/route`;
+const EXPERIENCES_Q_UPDATES = `aric's outbound queue`;
 
 
 //Helpers
@@ -82,11 +87,11 @@ app.post('/', (req, res) => {
 });
 
 app.post('/events', (req, res) => {
-
-  //TODO: after writing to db, chain a promise to add to Aggregators queue
-  //http://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/sqs-examples-using-queues.html
-
-  dbWrite(req.body);
+  return new Promise((resolve, reject) => {
+    resolve(dbWrite(req.body));
+  })
+  .then(() => sqs.sendMessage(AG_Q_CLICKEVENTS, req.body))
+  .catch(err => console.error(err));
 });
 
 app.get('/experiences', (req, res) => {
@@ -144,10 +149,10 @@ app.get('/experiences/:location', (req, res) => {
     })
     .then(() => {
       const userSearchPayload = {
-        user_id: req.query.user,
+        user_id: `${req.query.user}`,
         location_id: req.query.location
       }
-      return axios.post(USER_SERVICE, userSearchPayload);
+      sqs.sendMessage(USER_Q_SEARCHEDLOCATION, userSearchPayload);
     })
     .catch(err => console.error(err));
 });
