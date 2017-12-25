@@ -24,7 +24,7 @@ describe('User clicks on an Experiences item.', () => {
         .send({
           event_type: "CLICK",
           experience_id: 999999999,
-          experiment_type: "TEST",
+          experiment_type: "XMASSTEST2",
           user_id: 111111111
         })
         .expect(200, done);

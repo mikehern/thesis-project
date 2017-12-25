@@ -4,7 +4,28 @@ const moment = require('moment');
 const port = 1337;
 const bodyParser = require('body-parser');
 const axios = require('axios');
-const sqs = require('./sqs-helpers');
+
+const AWS = require('aws-sdk');
+const AWScredentials = require('./config');
+const queueUrl = 'https://sqs.us-east-1.amazonaws.com/410939018954/ToyQ';
+AWS.config.update({
+  region: AWScredentials.sqsConfig.region,
+  accessKeyId: AWScredentials.sqsConfig.accessKeyId,
+  secretAccessKey: AWScredentials.sqsConfig.secretAccessKey
+});
+const sqs = new AWS.SQS({ apiVersion: '2012-11-05' });
+const Consumer = require('sqs-consumer');
+const worker = Consumer.create({
+  queueUrl: queueUrl,
+  handleMessage: (message, done) => {
+    console.log('Q payloads body is: ', message.Body);
+    done();
+  },
+  waitTimeSeconds: 10
+});
+worker.on('empty', data => console.log('Queue is empty...'));
+worker.on('error', err => console.error(err));
+worker.start();
 
 const Promise = require('bluebird');
 
@@ -88,7 +109,27 @@ app.post('/', (req, res) => {
 
 app.post('/events', (req, res) => {
   let body = req.body;
-  dbWrite(body, res);
+  const params = {
+    MessageAttributes: {
+      serviceOrigin: {
+        DataType: 'String',
+        StringValue: 'Client'
+      },
+      leftServiceAt: {
+        DataType: 'String',
+        StringValue: `${TSNow}`
+      }
+    },
+    MessageBody: JSON.stringify(body),
+    QueueUrl: queueUrl
+  };
+  const sendMessageAsync = sqs.sendMessage(params).promise();
+  return new Promise((resolve, reject) => {
+    resolve(dbWrite(body, res));
+  })
+    .then(() => sqs.sendMessage())
+    .then(result => console.log('SQS sent with: ', result))
+    .catch(err => console.error(err));
 });
 
 app.get('/experiences', (req, res) => {

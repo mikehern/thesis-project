@@ -4,6 +4,7 @@
   "description": "The project description",
   "main": "index.js",
   "dependencies": {
+    "aws-sdk": "^2.174.0",
     "axios": "^0.17.1",
     "bluebird": "^3.5.1",
     "body-parser": "^1.18.2",
@@ -12,7 +13,8 @@
     "express": "^4.16.2",
     "moment": "^2.20.1",
     "nodemon": "^1.13.3",
-    "redis": "^2.8.0"
+    "redis": "^2.8.0",
+    "sqs-consumer": "^3.8.0"
   },
   "devDependencies": {
     "chai": "^4.1.2",
