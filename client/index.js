@@ -47,7 +47,6 @@ app.use(bodyParser.json());
 const USER_SERVICE = `javi's ip/route`;
 const USER_Q_SEARCHEDLOCATION = `javi's inbound queue`;
 const USER_Q_SEARCHRESULTS = `javi's outbound queue`;
-const AG_SERVICE = `vinoj's ip/route`;
 const AG_Q_CLICKEVENTS = `vinoj's inbound queue`;
 const EXPERIENCES_SERVICE = `aric's ip/route`;
 const EXPERIENCES_Q_UPDATES = `aric's outbound queue`;
@@ -89,7 +88,7 @@ const sendABPayload = (cacheReply, ABResult) => {
         return dbPayload;
       })
       .then(dbPayload => {
-        Promise.map(dbPayload, (experience) => {
+        Promise.mapSeries(dbPayload, (experience) => {
           return dbWrite(experience);
         })
       });
@@ -127,7 +126,7 @@ app.post('/events', (req, res) => {
   return new Promise((resolve, reject) => {
     resolve(dbWrite(body, res));
   })
-    .then(() => sqs.sendMessage())
+    .then(() => sendMessageAsync)
     .then(result => console.log('SQS sent with: ', result))
     .catch(err => console.error(err));
 });
@@ -177,7 +176,7 @@ app.get('/experiences/:location', (req, res) => {
         })
         //Starting serially... want to test promise.all concurrency later
           .then(res => {
-            Promise.map(res.data, (experience) => {
+            Promise.mapSeries(res.data, (experience) => {
               return cache.lpushAsync(cacheKey, experience);
             })
               .then(() => cache.lrangeAsync(cacheKey, 0, 11))
