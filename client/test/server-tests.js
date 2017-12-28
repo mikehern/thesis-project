@@ -12,41 +12,57 @@ describe('User arrives on homepage.', () => {
         .expect(200, done);
     });
   });
+  
+  describe(`Prepares pre-fetched results in case the user clicks on Experiences.`, () => {
+    xit(`Does not create a payload when personalized results are already cached.`, () => {
+
+    });
+    xit(`Creates a payload with the user id as a string.`, () => {
+
+    });
+    xit(`User search history queue contains the payload.`, () => {
+
+    });
+    xit(`Async expects a User-search history pair in the User search results queue`, () => {
+
+    });
+  });
+
+  describe(`Builds a cached default result set based on past search history.`, () => {
+    xit(`Populates the default set with any locations already cached.`, () => {
+
+    });
+    xit(`Creates a payload of a location id for each uncached search history location.`, () => {
+
+    });
+    xit(`Experiences inbound queue contains a payload for each location.`, () => {
+
+    });
+    xit(`Async expects 36 experiences for each location in the Experiences results queue.`, () => {
+
+    });
+    xit(`Async updates the cache for each location-experience payload received.`, () => {
+
+    });
+    xit(`Async updates the default set with the experiences payload.`, () => {
+
+    });
+  });
+
+  describe(`Contains pre-fetched sets in case users have no search history.`, () => {
+    xit(`Contains a cached set of 36 experiences sorted by rating.`, () => {
+      
+    });
+    xit(`Contains a cached set of 36 experiences sorted by price.`, () => {
+
+    });
+  });
 
 });
 
-describe('User clicks on an Experiences item.', () => {
 
-  describe('Client POSTS to our server.', () => {
-    it('Connects to the server', (done) => {
-      server
-        .post('/events')
-        .send({
-          event_type: "CLICK",
-          experience_id: 999999999,
-          experiment_type: "XMASSTEST2",
-          user_id: 111111111
-        })
-        .expect(200, done);
-    });
-    
-  });
 
-  describe('DB includes written event', () => {
-    xit('Row contains original payload', () => {
 
-    });
-    xit('Row includes timestamp', () => {
-
-    });
-  });
-
-  describe('Aggregator receives event', () => {
-    xit(`Aggregator's queue includes the original payload`, () => {
-
-    });
-  });
-});
 
 describe('User goes to Experiences product.', () => {
 
@@ -76,6 +92,43 @@ describe('User goes to Experiences product.', () => {
     });
 
     xit(`A record includes 'VIEWED' for a served result.`, () => {
+
+    });
+  });
+});
+
+
+
+
+
+describe('User clicks on an Experiences item.', () => {
+
+  describe('Client POSTS to our server.', () => {
+    it('Connects to the server', (done) => {
+      server
+        .post('/events')
+        .send({
+          event_type: "CLICK",
+          experience_id: 999999999,
+          experiment_type: "XMASSTEST2",
+          user_id: 111111111
+        })
+        .expect(200, done);
+    });
+
+  });
+
+  describe('DB includes written event', () => {
+    xit('Row contains original payload', () => {
+
+    });
+    xit('Row includes timestamp', () => {
+
+    });
+  });
+
+  describe('Aggregator receives event', () => {
+    xit(`Aggregator's queue includes the original payload`, () => {
 
     });
   });
