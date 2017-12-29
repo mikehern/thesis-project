@@ -2,8 +2,56 @@ const expect = require('chai').expect;
 const request = require('request');
 const supertest = require('supertest');
 const server = supertest('http://localhost:1337');
+const fakedata = require('./fake-data');
+
+const Promise = require('bluebird');
+const redis = require('redis');
+const cache = redis.createClient();
+Promise.promisifyAll(redis.RedisClient.prototype);
+Promise.promisifyAll(redis.Multi.prototype);
+
+const cassandra = require('cassandra-driver');
+const client = new cassandra.Client({
+  contactPoints: ['127.0.0.1'],
+  keyspace: 'events'
+});
+
+const perfectUserId = '3011352300';
+const perfectUserHistory = [2124028216, -1681810253, -1247473455, -365845894, -1560504360];
+const perfectGetReq = `user_id=${perfectUserId}`;
+const perfectSearchResults = {
+  "userId": "1000",
+  "recent": perfectUserHistory
+};
+const perfectUserKey = `3011352300:results`;
+
 
 describe('User arrives on homepage.', () => {
+
+  before(done => {
+    console.log('beginning before hook...');
+    cache
+      .lpushAsync(perfectUserKey, perfectUserHistory)
+      .then(result => console.log('beforepush:', result))
+      .then(() => cache.lrangeAsync(perfectUserKey, 0, -1))
+      .then(result => console.log('afterpush:', result))
+      .then(() => done());
+  });
+
+  after(done => {
+
+    console.log('beginning after hook...');
+    cache
+      .lrangeAsync(perfectUserKey, 0, -1)
+      .then(result => console.log('beforedelete: ', result))
+      .then(() => cache.delAsync(perfectUserKey))
+      .then(result => console.log('afterdelete:', result))
+      .then(() => cache.lrangeAsync(perfectUserKey, 0, -1))
+      .then(result => console.log('lastly...', result))
+      .then(() => done())
+      .catch(err => console.error(err));
+    
+  });
 
   describe(`Client connects to /`, () => {
     it('Responds with a 200', (done) => {
@@ -133,3 +181,4 @@ describe('User clicks on an Experiences item.', () => {
     });
   });
 });
+
