@@ -14,18 +14,6 @@ AWS.config.update({
   secretAccessKey: AWScredentials.sqsConfig.secretAccessKey
 });
 const sqs = new AWS.SQS({ apiVersion: '2012-11-05' });
-const Consumer = require('sqs-consumer');
-const worker = Consumer.create({
-  queueUrl: queueUrl,
-  handleMessage: (message, done) => {
-    console.log('Q payloads body is: ', message.Body);
-    done();
-  },
-  waitTimeSeconds: 10
-});
-worker.on('empty', data => console.log('Queue is empty...'));
-worker.on('error', err => console.error(err));
-worker.start();
 
 const Promise = require('bluebird');
 
@@ -46,10 +34,8 @@ app.use(bodyParser.json());
 
 const USER_SERVICE = `javi's ip/route`;
 const USER_Q_SEARCHEDLOCATION = `javi's inbound queue`;
-const USER_Q_SEARCHRESULTS = `javi's outbound queue`;
 const AG_Q_CLICKEVENTS = `vinoj's inbound queue`;
 const EXPERIENCES_SERVICE = `aric's ip/route`;
-const EXPERIENCES_Q_UPDATES = `aric's outbound queue`;
 
 
 //Helpers
@@ -97,6 +83,37 @@ const sendABPayload = (cacheReply, ABResult) => {
 
 //Routes
 app.get('/', (req, res) => {
+  
+  const userKey = req.query.user;
+  const userHistory = cache
+    .llenAsync(userKey)
+    .then(result => result)
+    .catch(err => console.error(err));
+  
+  if (userHistory === 0) {
+    const userSvcPayload = {
+      MessageAttributes: {
+        serviceOrigin: {
+          DataType: 'String',
+          StringValue: 'Client'
+        },
+        leftServiceAt: {
+          DataType: 'String',
+          StringValue: `${TSNow}`
+        }
+      },
+      MessageBody: JSON.stringify(userKey),
+      QueueUrl: USER_Q_SEARCHEDLOCATION
+    };
+
+    sqs
+      .sendMessage(userSvcPayload).promise()
+      .then(result => console.log('SQS sent to User Q with: ', result))
+      .catch(err => console.error(err));
+  }
+
+  //Serving the user static assets is currently decoupled from pre-fetching and caching
+
   res.status(200).send(`User landed on homepage via root route at ${TSNow}`);
   console.log(`Client GET at '/' ${TSNow}`);
 });
@@ -188,8 +205,26 @@ app.get('/experiences/:location', (req, res) => {
       const userSearchPayload = {
         user_id: `${req.query.user}`,
         location_id: req.query.location
-      }
-      sqs.sendMessage(USER_Q_SEARCHEDLOCATION, userSearchPayload);
+      };
+
+      const params = {
+        MessageAttributes: {
+          serviceOrigin: {
+            DataType: 'String',
+            StringValue: 'Client'
+          },
+          leftServiceAt: {
+            DataType: 'String',
+            StringValue: `${TSNow}`
+          }
+        },
+        MessageBody: JSON.stringify(userSearchPayload),
+        QueueUrl: EXPERIENCES_Q_INBOUND
+      };
+
+      sqs.sendMessage(params).promise()
+        .then(result => console.log('SQS sent to Experiences Q with: ', result))
+        .catch(err => console.error('ExperienceQ issue is: ', err));
     })
     .catch(err => console.error(err));
 });
