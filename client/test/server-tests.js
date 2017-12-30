@@ -3,6 +3,7 @@ const request = require('request');
 const supertest = require('supertest');
 const server = supertest('http://localhost:1337');
 const fakedata = require('./fake-data');
+const sinon = require('sinon');
 
 const Promise = require('bluebird');
 const redis = require('redis');
