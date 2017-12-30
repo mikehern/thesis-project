@@ -19,7 +19,6 @@ cache.on('connect', () => console.log('Connected to Redis!'));
 
 const USER_Q_SEARCHRESULTS = `javi's outbound queue`;
 const EXPERIENCES_Q_UPDATES = `aric's outbound queue`;
-const EXPERIENCES_SERVICE = `aric's ip/route`;
 const EXPERIENCES_Q_INBOUND = `aric's inbound queue`;
 
 const TSNow = moment(Date.now()).format('llll');
@@ -71,7 +70,7 @@ const userHistoryWorker = Consumer.create({
       .catch(err => console.error('UserQ handleMessage issue is: ', err))
     
     //Intentionally making done non-blocking.
-    
+
     done();
   },
 
@@ -83,3 +82,37 @@ const userHistoryWorker = Consumer.create({
 userHistoryWorker.on('empty', data => console.log('UserHistoryQ is empty...'));
 userHistoryWorker.on('error', err => console.error('UserHistoryQ has this issue: ', err));
 userHistoryWorker.start();
+
+
+
+//Expects a payload of locationID-experiences. Takes the experiences and dumps them in cache.
+
+const experiencesWorker = Consumer.create({
+  queueUrl: EXPERIENCES_Q_UPDATES,
+  handleMessage: (message, done) => {
+    console.log('Fetched from the ExperiencesQ: ', message.Body);
+
+    //TODO: conditionally handle the 2 different types of payloads:
+    //1) location-experiences
+    //2) user-location-experiences pagination
+
+    const { locationId, locations } = message.Body;
+
+    cache
+      .lpushAsync(`${locationId}:results`, locations)
+      .then(result => console.log('Wrote to location cache: ', result))
+      .catch(err => console.error('Issue with location cache: ', err));
+
+    //Intentionally making done non-blocking.
+
+    done();
+  },
+
+  //Starting with a long wait time
+
+  waitTimeSeconds: 10
+});
+
+experiencesWorker.on('empty', data => console.log('ExperiencesQ is empty...'));
+experiencesWorker.on('error', err => console.error('ExpereiencesQ has this issue: ', err));
+experiencesWorker.start();

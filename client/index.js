@@ -59,6 +59,10 @@ const dbWrite = (experience, res) => {
     .catch(reason => console.error(reason));
 };
 
+//Inspects the cache, decorates each experience with an abtest, keeps the experiences in an array,
+//sends the array back to the client with a 200, decorates the payload with a viewed state,
+//serially writes each experience into the db.
+
 const sendABPayload = (cacheReply, ABResult) => {
   let clientPayload = [];
   let dbPayload = [];
@@ -112,16 +116,24 @@ app.get('/', (req, res) => {
       .catch(err => console.error(err));
   }
 
-  //Serving the user static assets is currently decoupled from pre-fetching and caching
+  //Serving the client static assets is currently decoupled from pre-fetching and caching
 
   res.status(200).send(`User landed on homepage via root route at ${TSNow}`);
   console.log(`Client GET at '/' ${TSNow}`);
 });
 
+
+
+//Strictly a test route.
+
 app.post('/', (req, res) => {
   res.send(`Server received your POST at ${TSNow}`);
   console.log(`POST's payload body is: `, req.body);
 });
+
+
+
+//Handles client clicks.
 
 app.post('/events', (req, res) => {
   let body = req.body;
@@ -137,21 +149,32 @@ app.post('/events', (req, res) => {
       }
     },
     MessageBody: JSON.stringify(body),
-    QueueUrl: queueUrl
+    QueueUrl: AG_Q_CLICKEVENTS
   };
   const sendMessageAsync = sqs.sendMessage(params).promise();
+
+  //Take the click event, place it into a promised db write,
+  //then push the message to the Aggregator queue.
+
   return new Promise((resolve, reject) => {
     resolve(dbWrite(body, res));
   })
     .then(() => sendMessageAsync)
-    .then(result => console.log('SQS sent with: ', result))
+    .then(result => console.log('SQS sent to Aggregator Q: ', result))
     .catch(err => console.error(err));
 });
+
+
+
+//Client directly goes to experiences.
 
 app.get('/experiences', (req, res) => {
   const cacheKey = `${req.query.user}:results`;
   let clientPayload = [];
   let dbPayload = [];
+
+  //If user experiences cache contains personalized experiences, run the sendABPayload helper
+  //Otherwise run an ABtest and send them a generic set of popular experiences.
 
   cache.lpopAsync(cacheKey, 0, 11)
     .then(reply => {
@@ -172,11 +195,21 @@ app.get('/experiences', (req, res) => {
     })
     .catch(err => console.error(err));
 });
+
+
+
+//Client searches for experiences at a specific location.
       
 app.get('/experiences/:location', (req, res) => {
   const cacheKey = `${req.query.location}:results`;
   let clientPayload = [];
   let dbPayload = [];
+
+  //If location cache contains experiences, run the sendABPayload helper
+  //Otherwise GET listings from the experiences service,
+  //serially write them to the cache,
+  //take the first 12 results from the cache,
+  //and call the sendABPayload helper.
 
   cache.lrangeAsync(cacheKey, 0, 11)
     .then(reply => {
@@ -201,6 +234,10 @@ app.get('/experiences/:location', (req, res) => {
           })
       }
     })
+
+    //...after responding to the client with a 200, places the userId and locationId
+    //on the experiences Q. For future pagination. May not need this.
+
     .then(() => {
       const userSearchPayload = {
         user_id: `${req.query.user}`,
