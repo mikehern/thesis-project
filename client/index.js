@@ -35,8 +35,8 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
 const USER_SERVICE = `javi's ip/route`;
-const USER_Q_SEARCHEDLOCATION = `javi's inbound queue`;
-const AG_Q_CLICKEVENTS = `vinoj's inbound queue`;
+const USER_Q_SEARCHEDLOCATION = `https://sqs.us-east-1.amazonaws.com/410939018954/Dummy_USER_Q_SEARCHEDLOCATION`;
+const AG_Q_CLICKEVENTS = `https://sqs.us-east-1.amazonaws.com/410939018954/Dummy_AG_Q_CLICKEVENTS`;
 const EXPERIENCES_SERVICE = `aric's ip/route`;
 
 
@@ -88,8 +88,8 @@ const sendABPayload = (cacheReply, ABResult) => {
 };
 
 //Routes
-app.get('/', (req, res) => {
-  
+app.get('/:user', (req, res) => {
+  console.log('got here');
   const userKey = req.query.user;
   const userHistory = cache
     .llenAsync(userKey)
