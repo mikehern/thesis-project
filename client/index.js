@@ -29,6 +29,8 @@ const client = new cassandra.Client({
   keyspace: 'events' 
 });
 
+const pino = require('pino')();
+
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
@@ -127,8 +129,9 @@ app.get('/', (req, res) => {
 //Strictly a test route.
 
 app.post('/', (req, res) => {
-  res.send(`Server received your POST at ${TSNow}`);
-  console.log(`POST's payload body is: `, req.body);
+  pino.info('Begin POST to /');
+  res.status(201).send(`Server received your POST at ${TSNow}`);
+  pino.info('End POST to /');
 });
 
 

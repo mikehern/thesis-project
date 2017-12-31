@@ -24,7 +24,7 @@ const EXPERIENCES_Q_INBOUND = `aric's inbound queue`;
 const TSNow = moment(Date.now()).format('llll');
 
 
-
+//Workers
 const userHistoryWorker = Consumer.create({
   queueUrl: USER_Q_SEARCHRESULTS,
   handleMessage: (message, done) => {

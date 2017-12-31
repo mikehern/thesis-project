@@ -11,8 +11,11 @@
     "cassandra-driver": "^3.3.0",
     "easy-sqs": "^0.5.3",
     "express": "^4.16.2",
+    "express-pino-logger": "^3.0.1",
     "moment": "^2.20.1",
     "nodemon": "^1.13.3",
+    "pino": "^4.10.2",
+    "pino-elasticsearch": "^2.2.1",
     "redis": "^2.8.0",
     "sqs-consumer": "^3.8.0"
   },
