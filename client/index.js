@@ -46,6 +46,7 @@ const coinFlip = () => {
   return (Math.floor(Math.random() * 2) == 0) ? 'reviews' : 'ratings';
 };
 const dbWrite = (experience, res) => {
+  pino.info({ route: '', method: '', stage: 'BEGIN', function: 'dbWrite' });
   const {
     event_type: e_type,
     experience_id: x_id,
@@ -56,9 +57,10 @@ const dbWrite = (experience, res) => {
   const query = `INSERT into events.user_events(event_timestamp, event_type, experience_id, experiment_type, user_id) values(${Date.now()}, '${e_type}', ${x_id}, '${ab_type}', ${u_id});`;
 
   client.execute(query)
-    .then(result => console.log('DB was hit with: ', result))
-    .then(result => res.status(200).send(`DB completed your post at ${TSNow}`))
-    .catch(reason => console.error(reason));
+    .then(result => pino.info({ route: '', method: '', stage: 'MIDDLE', function: 'dbWrite' }, 'after db write, before res'))
+    .then(() => res.status(200).send(`DB completed your post at ${TSNow}`))
+    .then(() => pino.info({ route: '', method: '', stage: 'END', function: 'dbWrite' }))
+    .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', function: 'dbWrite' }, 'during dbWrite')));
 };
 
 //Inspects the cache, decorates each experience with an abtest, keeps the experiences in an array,
@@ -66,6 +68,7 @@ const dbWrite = (experience, res) => {
 //serially writes each experience into the db.
 
 const sendABPayload = (cacheReply, ABResult) => {
+  pino.info({ route: '', method: '', stage: 'BEGIN', function: 'sendABPayload' });
   let clientPayload = [];
   let dbPayload = [];
   ABResult = ABResult || coinFlip();
@@ -74,54 +77,68 @@ const sendABPayload = (cacheReply, ABResult) => {
       clientPayload = cacheReply.map(el => el.experiment_type = ABResult);
       return clientPayload;
     })
-      .then(clientPayload => res.status(200).send(clientPayload))
+      .then(clientPayload => {
+        pino.info({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'after AB decorate, before res send');
+        res.status(200).send(clientPayload);
+      })
       .then(() => {
+        pino.info({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'after res send, before db decorate');
         dbPayload = clientPayload.map(el => el.event_type = 'VIEWED');
         return dbPayload;
       })
       .then(dbPayload => {
+        pino.info({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'after db decorate, before promise db write');
         Promise.mapSeries(dbPayload, (experience) => {
           return dbWrite(experience);
-        })
-      });
+        });
+      })
+      .then(() => pino.info({ route: '', method: '', stage: 'END', function: 'sendABPayload' }))
+      .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'during promise')));
   });
 };
 
 //Routes
 app.get('/:user', (req, res) => {
-  console.log('got here');
+  pino.info({ route: '/', method: 'GET', stage: 'BEGIN' });
   const userKey = req.query.user;
-  const userHistory = cache
-    .llenAsync(userKey)
-    .then(result => result)
-    .catch(err => console.error(err));
-  
-  if (userHistory === 0) {
-    const userSvcPayload = {
-      MessageAttributes: {
-        serviceOrigin: {
-          DataType: 'String',
-          StringValue: 'Client'
-        },
-        leftServiceAt: {
-          DataType: 'String',
-          StringValue: `${TSNow}`
-        }
-      },
-      MessageBody: JSON.stringify(userKey),
-      QueueUrl: USER_Q_SEARCHEDLOCATION
-    };
 
-    sqs
-      .sendMessage(userSvcPayload).promise()
-      .then(result => console.log('SQS sent to User Q with: ', result))
-      .catch(err => console.error(err));
-  }
+  cache
+    .llenAsync(userKey)
+    .then(result => {
+      pino.info({ route: '/', method: 'GET', stage: 'MIDDLE' }, 'after cache inspected');
+      if (result === 0) {
+        const userSvcPayload = {
+          MessageAttributes: {
+            serviceOrigin: {
+              DataType: 'String',
+              StringValue: 'Client'
+            },
+            leftServiceAt: {
+              DataType: 'String',
+              StringValue: `${TSNow}`
+            }
+          },
+          MessageBody: JSON.stringify(userKey),
+          QueueUrl: USER_Q_SEARCHEDLOCATION
+        };
+
+        pino.info({ route: '/', method: 'GET', stage: 'MIDDLE' }, 'before sqs sent');
+
+        sqs
+          .sendMessage(userSvcPayload).promise()
+          .then(result => pino.info({ route: '/', method: 'GET', stage: 'MIDDLE' }, 'after sqs send'))
+          .catch(err => pino.error(new Error({ route: '/', method: 'GET', stage: 'MIDDLE' }, 'after sqs send')));
+      }
+    })
+    .catch(err => pino.error(new Error({ route: '/', method: 'GET', stage: 'MIDDLE' }, 'after cache and sqs send')));
+  
+
 
   //Serving the client static assets is currently decoupled from pre-fetching and caching
 
   res.status(200).send(`User landed on homepage via root route at ${TSNow}`);
-  console.log(`Client GET at '/' ${TSNow}`);
+  pino.info({ route: '/', method: 'GET', stage: 'END' });
+
 });
 
 
@@ -129,9 +146,9 @@ app.get('/:user', (req, res) => {
 //Strictly a test route.
 
 app.post('/', (req, res) => {
-  pino.info('Begin POST to /');
+  pino.info({ route: '/', method: 'POST', stage: 'BEGIN' });
   res.status(201).send(`Server received your POST at ${TSNow}`);
-  pino.info('End POST to /');
+  pino.info({ route: '/', method: 'POST', stage: 'END' });
 });
 
 
@@ -139,6 +156,7 @@ app.post('/', (req, res) => {
 //Handles client clicks.
 
 app.post('/events', (req, res) => {
+  pino.info({ route: '/events', method: 'POST', stage: 'BEGIN' });
   let body = req.body;
   const params = {
     MessageAttributes: {
@@ -154,17 +172,20 @@ app.post('/events', (req, res) => {
     MessageBody: JSON.stringify(body),
     QueueUrl: AG_Q_CLICKEVENTS
   };
+ 
   const sendMessageAsync = sqs.sendMessage(params).promise();
 
   //Take the click event, place it into a promised db write,
   //then push the message to the Aggregator queue.
 
   return new Promise((resolve, reject) => {
+    pino.info({ route: '/events', method: 'POST', stage: 'MIDDLE' }, 'before db write');
     resolve(dbWrite(body, res));
   })
+    .then(() => pino.info({ route: '/events', method: 'POST', stage: 'MIDDLE' }, 'after db write, before SQS send'))
     .then(() => sendMessageAsync)
-    .then(result => console.log('SQS sent to Aggregator Q: ', result))
-    .catch(err => console.error(err));
+    .then(() => pino.info({ route: '/events', method: 'POST', stage: 'END' }))
+    .catch(err => pino.error(new Error({ route: '/events', method: 'POST', stage: 'MIDDLE' }, 'after db write and sqs send')));
 });
 
 
@@ -172,6 +193,7 @@ app.post('/events', (req, res) => {
 //Client directly goes to experiences.
 
 app.get('/experiences', (req, res) => {
+  pino.info({ route: '/experiences', method: 'GET', stage: 'BEGIN' });
   const cacheKey = `${req.query.user}:results`;
   let clientPayload = [];
   let dbPayload = [];
@@ -179,11 +201,14 @@ app.get('/experiences', (req, res) => {
   //If user experiences cache contains personalized experiences, run the sendABPayload helper
   //Otherwise run an ABtest and send them a generic set of popular experiences.
 
+  pino.info({ route: '/experiences', method: 'GET', stage: 'MIDDLE' }, 'before inspecting cache');
   cache.lpopAsync(cacheKey, 0, 11)
     .then(reply => {
       if (reply.length !== 0) {
+        pino.info({ route: '/experiences', method: 'GET', stage: 'MIDDLE' }, 'after cache verified, before sendAB');
         return sendABPayload(reply);
       } else {
+        pino.info({ route: '/experiences', method: 'GET', stage: 'MIDDLE' }, 'after cache non-exist, before sendAB default cache');
         const ABResult = coinFlip();
         if (ABResult === 'ratings') {
           cache
@@ -196,7 +221,8 @@ app.get('/experiences', (req, res) => {
         }
       }
     })
-    .catch(err => console.error(err));
+    .then(() => pino.info({ route: '/experiences', method: 'GET', stage: 'END' }))
+    .catch(err => pino.error(new Error({ route: '/experiences', method: 'GET', stage: 'MIDDLE' }, 'during cache or sendAB')));
 });
 
 
@@ -204,6 +230,7 @@ app.get('/experiences', (req, res) => {
 //Client searches for experiences at a specific location.
       
 app.get('/experiences/:location', (req, res) => {
+  pino.info({ route: '/experiences:location', method: 'GET', stage: 'BEGIN' });
   const cacheKey = `${req.query.location}:results`;
   let clientPayload = [];
   let dbPayload = [];
@@ -216,10 +243,13 @@ app.get('/experiences/:location', (req, res) => {
 
   cache.lrangeAsync(cacheKey, 0, 11)
     .then(reply => {
+      pino.info({ route: '/experiences:location', method: 'GET', stage: 'MIDDLE' }, 'cache inspected');
       if (reply.length !== 0) {
+        pino.info({ route: '/experiences:location', method: 'GET', stage: 'MIDDLE' }, 'cache inspected, before sendAB');
         return sendABPayload(reply);
       } else {
         const ABResult = coinFlip();
+        pino.info({ route: '/experiences:location', method: 'GET', stage: 'MIDDLE' }, 'cache inspected, before GET to expsvc');
         return axios.get(EXPERIENCES_SERVICE, {
           params: {
             location_id: req.query.location,
@@ -229,12 +259,21 @@ app.get('/experiences/:location', (req, res) => {
         })
         //Starting serially... want to test promise.all concurrency later
           .then(res => {
+            pino.info({ route: '/experiences:location', method: 'GET', stage: 'MIDDLE' }, 'after GET to expsvc, before cache write');
             Promise.mapSeries(res.data, (experience) => {
               return cache.lpushAsync(cacheKey, experience);
             })
-              .then(() => cache.lrangeAsync(cacheKey, 0, 11))
-              .then(reply => sendABPayload(reply, ABResult))
+              .then(() => {
+                pino.info({ route: '/experiences:location', method: 'GET', stage: 'MIDDLE' }, 'after cache write, before cache pull');
+                cache.lrangeAsync(cacheKey, 0, 11);
+              })
+              .then(reply => {
+                pino.info({ route: '/experiences:location', method: 'GET', stage: 'MIDDLE' }, 'after promise cache, before sendAB call');
+                sendABPayload(reply, ABResult);
+              })
+              .catch(err => pino.error(new Error({ route: '/experiences:location', method: 'GET', stage: 'MIDDLE' }, 'during cache')));
           })
+          .catch(err => pino.error(new Error({ route: '/experiences:location', method: 'GET', stage: 'MIDDLE' }, 'after get to expsvc')));
       }
     })
 
@@ -242,6 +281,7 @@ app.get('/experiences/:location', (req, res) => {
     //on the experiences Q. For future pagination. May not need this.
 
     .then(() => {
+      pino.info({ route: '/experiences:location', method: 'GET', stage: 'MIDDLE' }, 'after sendAB call, before SQS send');
       const userSearchPayload = {
         user_id: `${req.query.user}`,
         location_id: req.query.location
@@ -263,10 +303,11 @@ app.get('/experiences/:location', (req, res) => {
       };
 
       sqs.sendMessage(params).promise()
-        .then(result => console.log('SQS sent to Experiences Q with: ', result))
-        .catch(err => console.error('ExperienceQ issue is: ', err));
+        .then(() => pino.info({ route: '/experiences:location', method: 'GET', stage: 'MIDDLE' }, 'after sqs send'))
+        .catch(err => pino.error(new Error({ route: '/experiences:location', method: 'GET', stage: 'MIDDLE' }, 'during SQS send')));
     })
-    .catch(err => console.error(err));
+    .then(() => pino.info({ route: '/experiences:location', method: 'GET', stage: 'END' }))
+    .catch(err => pino.error(new Error({ route: '/experiences:location', method: 'GET', stage: 'MIDDLE' }, 'SQS prep')));
 });
 
 
