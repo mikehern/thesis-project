@@ -33,9 +33,10 @@ const userHistoryWorker = Consumer.create({
     const payload = JSON.parse(message.Body);
     
     let uncachedLocations = [];
-    console.log('uncachedLocations: ', uncachedLocations);
+    let cachedExperiences = [];
     
-    //Filter uncached locations, to be eventually put on experiences Q.
+    //Check the user history locations list.
+    //If the location has an empty experiences cache, store that in an array.
     
     Promise.mapSeries(payload.recent, (location) => {
       return cache
@@ -43,17 +44,25 @@ const userHistoryWorker = Consumer.create({
         .then(result => {
           if (result === 0) {
             uncachedLocations.push(location);
-            console.log('uncachedLocations: ', uncachedLocations);
+            pino.info({ route: '', method: '', stage: 'MIDDLE', worker: 'userHistory' }, `uncached location ${location}`);
+          } else {
+            cache.lrangeAsync(result, 0, 11).then(reply => cachedExperiences.push(...reply));
+            pino.info({ route: '', method: '', stage: 'MIDDLE', worker: 'userHistory' }, `cached experiences ${location}`);
           }
         })
         .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', worker: 'userHistory' }, 'during recent cache')));
     })
 
-      //Clears the user's cache first, then updates it with latest history
-      //Sends one location at a time, for now.
+      //Clears the user's cache first, then updates it with any cached experiences
 
       .then(() => cache.delAsync(`${payload.userId}:results`))
-      .then(() => cache.lpushAsync(`${payload.userId}:results`, payload.recent))
+      .then(() => {
+        if (cachedExperiences !== 0) {
+          cache.lpushAsync(`${payload.userId}:results`, cachedExperiences);
+          pino.info({ route: '', method: '', stage: 'MIDDLE', worker: 'userHistory' }, 'wrote to personalized cache');
+        }
+        return;
+      })
       .then(() => {
         pino.info({ route: '', method: '', stage: 'MIDDLE', worker: 'userHistory' }, 'after cache, before SQS send');
 
@@ -81,6 +90,7 @@ const userHistoryWorker = Consumer.create({
         // });
 
         //async promisemapped
+        //Take the array of uncached locations and ask the experiences service for experiences for each location.
 
         return Promise.mapSeries(uncachedLocations, (location) => {
           const params = {
