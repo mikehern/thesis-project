@@ -30,27 +30,59 @@ const userHistoryWorker = Consumer.create({
   queueUrl: USER_Q_SEARCHRESULTS,
   handleMessage: (message, done) => {
     pino.info({ route: '', method: '', stage: 'BEGIN', worker: 'userHistory' }, `${message.Body}`);
-    const {userId: userId, userHistory: recent} = message.Body;
+    const payload = JSON.parse(message.Body);
     
     let uncachedLocations = [];
+    console.log('uncachedLocations: ', uncachedLocations);
+    
+    //Filter uncached locations, to be eventually put on experiences Q.
+    
+    Promise.mapSeries(payload.recent, (location) => {
+      return cache
+        .llenAsync(`${location}:results`)
+        .then(result => {
+          if (result === 0) {
+            uncachedLocations.push(location);
+            console.log('uncachedLocations: ', uncachedLocations);
+          }
+        })
+        .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', worker: 'userHistory' }, 'during recent cache')));
+    })
 
-    userHistory.forEach((location) => {
-      if (cache.llenAsync(`${location}:results`) === 0) {
-        uncachedLocations.push(location);
-      }
-    });
+      //Clears the user's cache first, then updates it with latest history
+      //Sends one location at a time, for now.
 
-    //Clears the user's cache first, then updates it with latest history
-    //Sends one location at a time, for now.
-
-    pino.info({ route: '', method: '', stage: 'MIDDLE', worker: 'userHistory' }, 'after parsing history, before caching history');
-
-    cache
-      .delAsync(userId)
-      .then(() => cache.lpushAsync(`${userId}:results`, userHistory))
+      .then(() => cache.delAsync(`${payload.userId}:results`))
+      .then(() => cache.lpushAsync(`${payload.userId}:results`, payload.recent))
       .then(() => {
         pino.info({ route: '', method: '', stage: 'MIDDLE', worker: 'userHistory' }, 'after cache, before SQS send');
-        uncachedLocations.forEach((location) => {
+
+        //sync
+
+        // uncachedLocations.forEach((location) => {
+        //   const params = {
+        //     MessageAttributes: {
+        //       serviceOrigin: {
+        //         DataType: 'String',
+        //         StringValue: 'Client'
+        //       },
+        //       leftServiceAt: {
+        //         DataType: 'String',
+        //         StringValue: `${TSNow}`
+        //       }
+        //     },
+        //     MessageBody: JSON.stringify(location),
+        //     QueueUrl: EXPERIENCES_Q_INBOUND
+        //   };
+
+        //   sqs.sendMessage(params).promise()
+        //     .then(() => pino.info({ route: '', method: '', stage: 'MIDDLE', worker: 'userHistory' }, `sqs: ${location}`))
+        //     .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', worker: 'userHistory' }, 'during sqs send')));
+        // });
+
+        //async promisemapped
+
+        return Promise.mapSeries(uncachedLocations, (location) => {
           const params = {
             MessageAttributes: {
               serviceOrigin: {
@@ -66,16 +98,13 @@ const userHistoryWorker = Consumer.create({
             QueueUrl: EXPERIENCES_Q_INBOUND
           };
 
-          sqs.sendMessage(params).promise()
-            .then(result => pino.info({ route: '', method: '', stage: 'END', worker: 'userHistory' }, `sqs: ${result}`))
-            .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', worker: 'userHistory' }, 'during sqs send')));
-        });
+          return sqs.sendMessage(params).promise()
+            .then(() => pino.info({ route: '', method: '', stage: 'MIDDLE', worker: 'userHistory' }, `sqs: ${location}`));
+        });     
       })
+      .then(() => done())
+      .then(() => pino.info({ route: '', method: '', stage: 'END', worker: 'userHistory' }))
       .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', worker: 'userHistory' }, 'during sqs prep')));
-    
-    //Intentionally making done non-blocking.
-
-    done();
   },
 
   //Starting with a long wait time
