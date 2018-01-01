@@ -1,6 +1,7 @@
 const axios = require('axios');
 const moment = require('moment');
 const Promise = require('bluebird');
+const pino = require('pino')();
 const AWS = require('aws-sdk');
 const AWScredentials = require('./config');
 AWS.config.update({
@@ -28,7 +29,7 @@ const TSNow = moment(Date.now()).format('llll');
 const userHistoryWorker = Consumer.create({
   queueUrl: USER_Q_SEARCHRESULTS,
   handleMessage: (message, done) => {
-    console.log('Fetched from the UserQ: ', message.Body);
+    pino.info({ route: '', method: '', stage: 'BEGIN', worker: 'userHistory' }, `${message.Body}`);
     const {userId: userId, userHistory: recent} = message.Body;
     
     let uncachedLocations = [];
@@ -42,10 +43,13 @@ const userHistoryWorker = Consumer.create({
     //Clears the user's cache first, then updates it with latest history
     //Sends one location at a time, for now.
 
+    pino.info({ route: '', method: '', stage: 'MIDDLE', worker: 'userHistory' }, 'after parsing history, before caching history');
+
     cache
       .delAsync(userId)
       .then(() => cache.lpushAsync(`${userId}:results`, userHistory))
       .then(() => {
+        pino.info({ route: '', method: '', stage: 'MIDDLE', worker: 'userHistory' }, 'after cache, before SQS send');
         uncachedLocations.forEach((location) => {
           const params = {
             MessageAttributes: {
@@ -63,11 +67,11 @@ const userHistoryWorker = Consumer.create({
           };
 
           sqs.sendMessage(params).promise()
-            .then(result => console.log('SQS sent to Experiences Q with: ', result))
-            .catch(err => console.error('ExperienceQ issue is: ', err));
-        })
+            .then(result => pino.info({ route: '', method: '', stage: 'END', worker: 'userHistory' }, `sqs: ${result}`))
+            .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', worker: 'userHistory' }, 'during sqs send')));
+        });
       })
-      .catch(err => console.error('UserQ handleMessage issue is: ', err))
+      .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', worker: 'userHistory' }, 'during sqs prep')));
     
     //Intentionally making done non-blocking.
 
@@ -90,7 +94,7 @@ userHistoryWorker.start();
 const experiencesWorker = Consumer.create({
   queueUrl: EXPERIENCES_Q_UPDATES,
   handleMessage: (message, done) => {
-    console.log('Fetched from the ExperiencesQ: ', message.Body);
+    pino.info({ route: '', method: '', stage: 'BEGIN', worker: 'experiences' }, `${message.Body}`);
 
     //TODO: conditionally handle the 2 different types of payloads:
     //1) location-experiences
@@ -98,10 +102,12 @@ const experiencesWorker = Consumer.create({
 
     const { locationId, locations } = message.Body;
 
+    pino.info({ route: '', method: '', stage: 'MIDDLE', worker: 'experiences' }, 'after parsing history, before caching history');
+
     cache
       .lpushAsync(`${locationId}:results`, locations)
-      .then(result => console.log('Wrote to location cache: ', result))
-      .catch(err => console.error('Issue with location cache: ', err));
+      .then(() => pino.info({ route: '', method: '', stage: 'END', worker: 'experiences' }))
+      .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', worker: 'experiences' }, 'during cache push')));
 
     //Intentionally making done non-blocking.
 
