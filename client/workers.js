@@ -123,24 +123,22 @@ userHistoryWorker.start();
 const experiencesWorker = Consumer.create({
   queueUrl: EXPERIENCES_Q_UPDATES,
   handleMessage: (message, done) => {
-    pino.info({ route: '', method: '', stage: 'BEGIN', worker: 'experiences' }, `${message.Body}`);
-
+    pino.info({ route: '', method: '', stage: 'BEGIN', worker: 'experiences' });
+    const payload = JSON.parse(message.Body);
+    const { location_id, experiences } = payload;
+    
     //TODO: conditionally handle the 2 different types of payloads:
     //1) location-experiences
     //2) user-location-experiences pagination
 
-    const { locationId, locations } = message.Body;
-
-    pino.info({ route: '', method: '', stage: 'MIDDLE', worker: 'experiences' }, 'after parsing history, before caching history');
-
+    const stringifiedExperiences = experiences.map((experience) => JSON.stringify(experience));
+    pino.info({ route: '', method: '', stage: 'MIDDLE', worker: 'experiences' }, 'after jsonparse, before cache');
     cache
-      .lpushAsync(`${locationId}:results`, locations)
+      .lpushAsync(`${location_id}:results`, stringifiedExperiences)
+      .then(() => done())
       .then(() => pino.info({ route: '', method: '', stage: 'END', worker: 'experiences' }))
       .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', worker: 'experiences' }, 'during cache push')));
 
-    //Intentionally making done non-blocking.
-
-    done();
   },
 
   //Starting with a long wait time
