@@ -26,7 +26,7 @@ cache.on('connect', () => console.log('Connected to Redis!'));
 const cassandra = require('cassandra-driver');
 const client = new cassandra.Client({
   contactPoints: ['127.0.0.1'],
-  keyspace: 'events' 
+  keyspace: 'events'
 });
 
 const pino = require('pino')();
@@ -43,8 +43,9 @@ const EXPERIENCES_SERVICE = `aric's ip/route`;
 //Helpers
 const TSNow = moment(Date.now()).format('llll');
 const coinFlip = () => {
-  return (Math.floor(Math.random() * 2) == 0) ? 'reviews' : 'ratings';
+  return (Math.floor(Math.random() * 2) == 0) ? 'prices' : 'ratings';
 };
+
 const dbWrite = (experience, res) => {
   pino.info({ route: '', method: '', stage: 'BEGIN', function: 'dbWrite' });
   const {
@@ -63,49 +64,108 @@ const dbWrite = (experience, res) => {
     .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', function: 'dbWrite' }, 'during dbWrite')));
 };
 
+const dbWriteEx = (experience, res) => {
+  pino.info({ route: '', method: '', stage: 'BEGIN', function: 'dbWrite' });
+  const {
+    event_type: e_type,
+    experience_id: x_id,
+    experiment_type: ab_type,
+    user_id: u_id
+  } = experience;
+
+  const query = `INSERT into events.user_events(event_timestamp, event_type, experience_id, experiment_type, user_id) values(${Date.now()}, '${e_type}', ${x_id}, '${ab_type}', ${u_id});`;
+
+  client.execute(query)
+    .then(result => pino.info({ route: '', method: '', stage: 'MIDDLE', function: 'dbWrite' }, 'after db write, before res'))
+    // .then(() => res.status(200).send(`DB completed your post at ${TSNow}`))
+    .then(() => pino.info({ route: '', method: '', stage: 'END', function: 'dbWrite' }))
+    .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', function: 'dbWrite' }, 'during dbWrite')));
+};
+
 //Inspects the cache, decorates each experience with an abtest, keeps the experiences in an array,
 //sends the array back to the client with a 200, decorates the payload with a viewed state,
 //serially writes each experience into the db.
 
-const sendABPayload = (cacheReply, ABResult) => {
+const sendABPayload = (cacheReply, ABResult, res, userId) => {
   pino.info({ route: '', method: '', stage: 'BEGIN', function: 'sendABPayload' });
   let clientPayload = [];
   let dbPayload = [];
   ABResult = ABResult || coinFlip();
-  return new Promise((resolve, reject) => {
-    resolve(cacheReply => {
-      clientPayload = cacheReply.map(el => el.experiment_type = ABResult);
-      return clientPayload;
-    })
-      .then(clientPayload => {
-        pino.info({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'after AB decorate, before res send');
-        res.status(200).send(clientPayload);
-      })
-      .then(() => {
-        pino.info({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'after res send, before db decorate');
-        dbPayload = clientPayload.map(el => el.event_type = 'VIEWED');
-        return dbPayload;
-      })
-      .then(dbPayload => {
-        pino.info({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'after db decorate, before promise db write');
-        Promise.mapSeries(dbPayload, (experience) => {
-          return dbWrite(experience);
-        });
-      })
-      .then(() => pino.info({ route: '', method: '', stage: 'END', function: 'sendABPayload' }))
-      .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'during promise')));
+
+  cacheReply.forEach(el => {
+    let parsed = JSON.parse(el);
+    parsed.experiment_type = ABResult;
+    clientPayload.push(parsed);
   });
+
+  console.log('CLIENTPAYLOAD IS NOW: ', clientPayload);
+
+  //TODO: take subset of dbpayload and pass into dbWrite. Refactor both transforms into 1 then block.
+
+  Promise.resolve(res.status(200).send(clientPayload))
+    .then(() => {
+      pino.info({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'after res send, before db decorate');
+      clientPayload.forEach(el => {
+        let dbFormatted = {
+          event_type: 'VIEWED',
+          experience_id: Number(el.experience_id),
+          experiment_type: el.experiment_type,
+          user_id: Number(userId)
+        };
+        dbPayload.push(dbFormatted);
+      });
+      return dbPayload;
+    })
+    .then(dbPayload => {
+      let counter = 0;
+      console.log('DBPAYLOAD ARRIVED AS: ', dbPayload);
+      pino.info({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'after db decorate, before promise db write');
+      Promise.map(dbPayload, (experience) => {
+        return dbWriteEx(experience);
+      })
+        .then(() => pino.info({ route: '', method: '', stage: 'END', function: 'sendABPayload' }));
+    })
+    .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'during promise')));
+    
+
+  
+  // return new Promise((resolve, reject) => {
+  //   resolve(cacheReply => {
+  //     console.log('HERES CLIENTPAYLOAD: ', clientPayload);
+  //     clientPayload = cacheReply.map(el => el.experiment_type = ABResult);
+  //     return clientPayload;
+  //   })
+  //     .then(clientPayload => {
+  //       pino.info({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'after AB decorate, before res send');
+  //       res.status(200).send(clientPayload);
+  //     })
+  //     .then(() => {
+  //       pino.info({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'after res send, before db decorate');
+  //       dbPayload = clientPayload.map(el => el.event_type = 'VIEWED');
+  //       return dbPayload;
+  //     })
+  //     .then(dbPayload => {
+  //       pino.info({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'after db decorate, before promise db write');
+  //       Promise.mapSeries(dbPayload, (experience) => {
+  //         return dbWrite(experience);
+  //       });
+  //     })
+  //     .then(() => pino.info({ route: '', method: '', stage: 'END', function: 'sendABPayload' }))
+  //     .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'during promise')));
+    
+  //   reject(console.error(err));
+  // });
 };
 
 //Routes
-app.get('/:user', (req, res) => {
-  pino.info({ route: '/', method: 'GET', stage: 'BEGIN' });
+app.get('/home', (req, res) => {
+  pino.info({ route: '/home', method: 'GET', stage: 'BEGIN' });
   const userKey = req.query.user;
 
   cache
     .llenAsync(userKey)
     .then(result => {
-      pino.info({ route: '/', method: 'GET', stage: 'MIDDLE' }, 'after cache inspected');
+      pino.info({ route: '/home', method: 'GET', stage: 'MIDDLE' }, 'after cache inspected');
       if (result === 0) {
         const userSvcPayload = {
           MessageAttributes: {
@@ -122,22 +182,22 @@ app.get('/:user', (req, res) => {
           QueueUrl: USER_Q_SEARCHEDLOCATION
         };
 
-        pino.info({ route: '/', method: 'GET', stage: 'MIDDLE' }, 'before sqs sent');
+        pino.info({ route: '/home', method: 'GET', stage: 'MIDDLE' }, 'before sqs sent');
 
         sqs
           .sendMessage(userSvcPayload).promise()
-          .then(result => pino.info({ route: '/', method: 'GET', stage: 'MIDDLE' }, 'after sqs send'))
-          .catch(err => pino.error(new Error({ route: '/', method: 'GET', stage: 'MIDDLE' }, 'after sqs send')));
+          .then(result => pino.info({ route: '/home', method: 'GET', stage: 'MIDDLE' }, 'after sqs send'))
+          .catch(err => pino.error(new Error({ route: '/home', method: 'GET', stage: 'MIDDLE' }, 'after sqs send')));
       }
     })
-    .catch(err => pino.error(new Error({ route: '/', method: 'GET', stage: 'MIDDLE' }, 'after cache and sqs send')));
+    .catch(err => pino.error(new Error({ route: '/home', method: 'GET', stage: 'MIDDLE' }, 'after cache and sqs send')));
   
 
 
   //Serving the client static assets is currently decoupled from pre-fetching and caching
 
   res.status(200).send(`User landed on homepage via root route at ${TSNow}`);
-  pino.info({ route: '/', method: 'GET', stage: 'END' });
+  pino.info({ route: '/home', method: 'GET', stage: 'END' });
 
 });
 
@@ -202,7 +262,7 @@ app.get('/experiences', (req, res) => {
   //Otherwise run an ABtest and send them a generic set of popular experiences.
 
   pino.info({ route: '/experiences', method: 'GET', stage: 'MIDDLE' }, 'before inspecting cache');
-  cache.lpopAsync(cacheKey, 0, 11)
+  cache.lrangeAsync(cacheKey, 0, 11)
     .then(reply => {
       if (reply.length !== 0) {
         pino.info({ route: '/experiences', method: 'GET', stage: 'MIDDLE' }, 'after cache verified, before sendAB');
@@ -212,12 +272,12 @@ app.get('/experiences', (req, res) => {
         const ABResult = coinFlip();
         if (ABResult === 'ratings') {
           cache
-            .lrangeAsync(popularRatings, 0, 11)
-            .then(reply => sendABPayload(reply))
-        } else if (ABResult === 'reviews') {
+            .lrangeAsync('popularRatings', 0, 11)
+            .then(reply => sendABPayload(reply, null, res, req.query.user));
+        } else if (ABResult === 'prices') {
           cache
-            .lrangeAsync(popularReviews, 0, 11)
-            .then(reply => sendABPayload(reply))
+            .lrangeAsync('popularPrices', 0, 11)
+            .then(reply => sendABPayload(reply, null, res, req.query.user));
         }
       }
     })
