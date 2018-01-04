@@ -45,9 +45,9 @@ const TSNow = moment(Date.now()).format('llll');
 const coinFlip = () => {
   return (Math.floor(Math.random() * 2) == 0) ? 'prices' : 'ratings';
 };
+const logms = (tuple) => (tuple[0] * 1000000000 + tuple[1]) / 1000000;
 
 const dbWrite = (experience, res) => {
-  pino.info({ route: '', method: '', stage: 'BEGIN', function: 'dbWrite' });
   const {
     event_type: e_type,
     experience_id: x_id,
@@ -58,14 +58,11 @@ const dbWrite = (experience, res) => {
   const query = `INSERT into events.user_events(event_timestamp, event_type, experience_id, experiment_type, user_id) values(${Date.now()}, '${e_type}', ${x_id}, '${ab_type}', ${u_id});`;
 
   client.execute(query)
-    .then(result => pino.info({ route: '', method: '', stage: 'MIDDLE', function: 'dbWrite' }, 'after db write, before res'))
     .then(() => res.status(200).send(`DB completed your post at ${TSNow}`))
-    .then(() => pino.info({ route: '', method: '', stage: 'END', function: 'dbWrite' }))
     .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', function: 'dbWrite' }, 'during dbWrite')));
 };
 
 const dbWriteEx = (experience, res) => {
-  pino.info({ route: '', method: '', stage: 'BEGIN', function: 'dbWrite' });
   const {
     event_type: e_type,
     experience_id: x_id,
@@ -76,9 +73,7 @@ const dbWriteEx = (experience, res) => {
   const query = `INSERT into events.user_events(event_timestamp, event_type, experience_id, experiment_type, user_id) values(${Date.now()}, '${e_type}', ${x_id}, '${ab_type}', ${u_id});`;
 
   client.execute(query)
-    .then(result => pino.info({ route: '', method: '', stage: 'MIDDLE', function: 'dbWrite' }, 'after db write, before res'))
-    // .then(() => res.status(200).send(`DB completed your post at ${TSNow}`))
-    .then(() => pino.info({ route: '', method: '', stage: 'END', function: 'dbWrite' }))
+    .then(() => res.status(200).send(`DB completed your post at ${TSNow}`))
     .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', function: 'dbWrite' }, 'during dbWrite')));
 };
 
@@ -87,7 +82,6 @@ const dbWriteEx = (experience, res) => {
 //serially writes each experience into the db.
 
 const sendABPayload = (cacheReply, ABResult, res, userId) => {
-  pino.info({ route: '', method: '', stage: 'BEGIN', function: 'sendABPayload' });
   let clientPayload = [];
   let dbPayload = [];
   ABResult = ABResult || coinFlip();
@@ -98,13 +92,11 @@ const sendABPayload = (cacheReply, ABResult, res, userId) => {
     clientPayload.push(parsed);
   });
 
-  console.log('CLIENTPAYLOAD IS NOW: ', clientPayload);
 
   //TODO: take subset of dbpayload and pass into dbWrite. Refactor both transforms into 1 then block.
 
   Promise.resolve(res.status(200).send(clientPayload))
     .then(() => {
-      pino.info({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'after res send, before db decorate');
       clientPayload.forEach(el => {
         let dbFormatted = {
           event_type: 'VIEWED',
@@ -117,13 +109,9 @@ const sendABPayload = (cacheReply, ABResult, res, userId) => {
       return dbPayload;
     })
     .then(dbPayload => {
-      let counter = 0;
-      console.log('DBPAYLOAD ARRIVED AS: ', dbPayload);
-      pino.info({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'after db decorate, before promise db write');
       Promise.map(dbPayload, (experience) => {
         return dbWriteEx(experience);
       })
-        .then(() => pino.info({ route: '', method: '', stage: 'END', function: 'sendABPayload' }));
     })
     .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', function: 'sendABPayload' }, 'during promise')));
     
@@ -216,7 +204,6 @@ app.post('/', (req, res) => {
 //Handles client clicks.
 
 app.post('/events', (req, res) => {
-  pino.info({ route: '/events', method: 'POST', stage: 'BEGIN' });
   let body = req.body;
   const params = {
     MessageAttributes: {
@@ -239,12 +226,9 @@ app.post('/events', (req, res) => {
   //then push the message to the Aggregator queue.
 
   return new Promise((resolve, reject) => {
-    pino.info({ route: '/events', method: 'POST', stage: 'MIDDLE' }, 'before db write');
     resolve(dbWrite(body, res));
   })
-    .then(() => pino.info({ route: '/events', method: 'POST', stage: 'MIDDLE' }, 'after db write, before SQS send'))
     .then(() => sendMessageAsync)
-    .then(() => pino.info({ route: '/events', method: 'POST', stage: 'END' }))
     .catch(err => pino.error(new Error({ route: '/events', method: 'POST', stage: 'MIDDLE' }, 'after db write and sqs send')));
 });
 
@@ -253,6 +237,7 @@ app.post('/events', (req, res) => {
 //Client directly goes to experiences.
 
 app.get('/experiences', (req, res) => {
+  const routeBegin = process.hrtime();
   pino.info({ route: '/experiences', method: 'GET', stage: 'BEGIN' });
   const cacheKey = `${req.query.user}:results`;
   let clientPayload = [];
@@ -265,23 +250,36 @@ app.get('/experiences', (req, res) => {
   cache.lrangeAsync(cacheKey, 0, 11)
     .then(reply => {
       if (reply.length !== 0) {
-        pino.info({ route: '/experiences', method: 'GET', stage: 'MIDDLE' }, 'after cache verified, before sendAB');
+        const notCached = process.hrtime(routeBegin);
+        pino.info({ route: '/experiences', method: 'GET', stage: 'MIDDLE', duration: `${logms(notCached)}` }, 'after cache verified, before sendAB');
         return sendABPayload(reply);
       } else {
         pino.info({ route: '/experiences', method: 'GET', stage: 'MIDDLE' }, 'after cache non-exist, before sendAB default cache');
         const ABResult = coinFlip();
+        const coinFlipped = process.hrtime(routeBegin);
         if (ABResult === 'ratings') {
           cache
             .lrangeAsync('popularRatings', 0, 11)
-            .then(reply => sendABPayload(reply, null, res, req.query.user));
+            .then(reply => {
+              const ratingsCache = process.hrtime(routeBegin);
+              pino.info({ route: '/experiences', method: 'GET', stage: 'MIDDLE', duration: `${logms(ratingsCache)}` }, 'RATINGSCACHED');
+              sendABPayload(reply, null, res, req.query.user);
+            });
         } else if (ABResult === 'prices') {
           cache
             .lrangeAsync('popularPrices', 0, 11)
-            .then(reply => sendABPayload(reply, null, res, req.query.user));
+            .then(reply => {
+              const pricesCache = process.hrtime(routeBegin);
+              pino.info({ route: '/experiences', method: 'GET', stage: 'MIDDLE', duration: `${logms(pricesCache)}` }, 'PRICESCACHED');
+              sendABPayload(reply, null, res, req.query.user);
+            });
         }
       }
     })
-    .then(() => pino.info({ route: '/experiences', method: 'GET', stage: 'END' }))
+    .then(() => {
+      const completedRoute = process.hrtime(routeBegin);
+      pino.info({ route: '/experiences', method: 'GET', stage: 'END', duration: `${logms(completedRoute)}` });
+    })
     .catch(err => pino.error(new Error({ route: '/experiences', method: 'GET', stage: 'MIDDLE' }, 'during cache or sendAB')));
 });
 

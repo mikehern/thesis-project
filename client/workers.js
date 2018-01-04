@@ -19,7 +19,7 @@ Promise.promisifyAll(redis.Multi.prototype);
 cache.on('connect', () => console.log('Connected to Redis!'));
 
 const USER_Q_SEARCHRESULTS = `https://sqs.us-east-1.amazonaws.com/410939018954/Dummy_USER_Q_SEARCHRESULTS`;
-const EXPERIENCES_Q_UPDATES = `https://sqs.us-east-1.amazonaws.com/410939018954/Dummy_EXPERIENCES_Q_UPDATES`;
+const EXPERIENCES_Q_UPDATES = `https://sqs.us-east-2.amazonaws.com/489670500872/inventory_app_pipeline`;
 const EXPERIENCES_Q_INBOUND = `https://sqs.us-east-1.amazonaws.com/410939018954/Dummy_EXPERIENCES_Q_INBOUND`;
 
 const TSNow = moment(Date.now()).format('llll');
