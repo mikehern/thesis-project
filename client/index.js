@@ -5,6 +5,8 @@ const port = 1337;
 const bodyParser = require('body-parser');
 const axios = require('axios');
 
+//AWS
+
 const AWS = require('aws-sdk');
 const AWScredentials = require('./config');
 const queueUrl = 'https://sqs.us-east-1.amazonaws.com/410939018954/ToyQ';
@@ -17,17 +19,31 @@ const sqs = new AWS.SQS({ apiVersion: '2012-11-05' });
 
 const Promise = require('bluebird');
 
+//Redis
+
 const redis = require('redis');
 const cache = redis.createClient();
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 cache.on('connect', () => console.log('Connected to Redis!'));
 
-const cassandra = require('cassandra-driver');
-const client = new cassandra.Client({
-  contactPoints: ['127.0.0.1'],
-  keyspace: 'events'
+//DB
+const PGcredentials = require('./config');
+const { Client } = require('pg');
+const db = new Client({
+  user: PGcredentials.postgres.user,
+  host: PGcredentials.postgres.host,
+  database: PGcredentials.postgres.database,
+  password: PGcredentials.postgres.password,
+  port: PGcredentials.postgres.port,
 });
+db.connect();
+
+// const cassandra = require('cassandra-driver');
+// const client = new cassandra.Client({
+//   contactPoints: ['127.0.0.1'],
+//   keyspace: 'events'
+// });
 
 const pino = require('pino')();
 
@@ -55,11 +71,20 @@ const dbWrite = (experience, res) => {
     user_id: u_id
   } = experience;
 
-  const query = `INSERT into events.user_events(event_timestamp, event_type, experience_id, experiment_type, user_id) values(${Date.now()}, '${e_type}', ${x_id}, '${ab_type}', ${u_id});`;
+  // const query = `INSERT into events.user_events(event_timestamp, event_type, experience_id, experiment_type, user_id) values(${Date.now()}, '${e_type}', ${x_id}, '${ab_type}', ${u_id});`;
 
-  client.execute(query)
+  const query = {
+    text: `INSERT into public.user_events(event_timestamp, event_type, experience_id, experiment_type, user_id) VALUES($1, $2, $3, $4, $5)`,
+    values: [Date.now(), `${e_type}`, x_id, `${ab_type}`, u_id],
+  }
+
+  db.query(query)
     .then(() => res.status(200).send(`DB completed your post at ${TSNow}`))
     .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', function: 'dbWrite' }, 'during dbWrite')));
+
+  // client.execute(query)
+  //   .then(() => res.status(200).send(`DB completed your post at ${TSNow}`))
+  //   .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', function: 'dbWrite' }, 'during dbWrite')));
 };
 
 const dbWriteEx = (experience, res) => {
@@ -70,11 +95,20 @@ const dbWriteEx = (experience, res) => {
     user_id: u_id
   } = experience;
 
-  const query = `INSERT into events.user_events(event_timestamp, event_type, experience_id, experiment_type, user_id) values(${Date.now()}, '${e_type}', ${x_id}, '${ab_type}', ${u_id});`;
+  // const query = `INSERT into events.user_events(event_timestamp, event_type, experience_id, experiment_type, user_id) values(${Date.now()}, '${e_type}', ${x_id}, '${ab_type}', ${u_id});`;
 
-  client.execute(query)
+  const query = {
+    text: `INSERT into public.user_events(event_timestamp, event_type, experience_id, experiment_type, user_id) VALUES($1, $2, $3, $4, $5)`,
+    values: [Date.now(), `${e_type}`, x_id, `${ab_type}`, u_id],
+  }
+
+  db.query(query)
     .then(() => res.status(200).send(`DB completed your post at ${TSNow}`))
     .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', function: 'dbWrite' }, 'during dbWrite')));
+
+  // client.execute(query)
+  //   .then(() => res.status(200).send(`DB completed your post at ${TSNow}`))
+  //   .catch(err => pino.error(new Error({ route: '', method: '', stage: 'MIDDLE', function: 'dbWrite' }, 'during dbWrite')));
 };
 
 //Inspects the cache, decorates each experience with an abtest, keeps the experiences in an array,
